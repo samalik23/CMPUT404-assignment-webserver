@@ -2,6 +2,7 @@
 import socketserver, os
 
 
+
 # Copyright 2013 Abram Hindle, Eddie Antonio Santos
 # 
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +19,7 @@ import socketserver, os
 #
 #
 # Furthermore it is derived from the Python documentation examples thus
-# some of the code is Copyright © 2001-2013 Python Software
+# some of the code is Copyright Â© 2001-2013 Python Software
 # Foundation; All Rights Reserved
 #
 # http://docs.python.org/2/library/socketserver.html
@@ -34,10 +35,7 @@ class MyWebServer(socketserver.BaseRequestHandler):
     # Must do all the work to service a request 
     def handle(self):
         self.data = self.request.recv(1024).strip() # Will receive at most 1024 bytes
-        
-        # If no data is provided, return from the function
-        if not self.data:
-            return
+        print ("\nGot a request of: %s\n" % self.data)
         
         # Decodes data and splits it to retrieve desired information
         decoded = self.data.decode('utf-8').split("\r\n")
@@ -47,16 +45,20 @@ class MyWebServer(socketserver.BaseRequestHandler):
         
         # Method is retrieved here
         header = decoded[0].split()
+        
+        response = header[2]
         print("\nThe method is: ", header[0])
         
         path = fullyDecoded.split()[1]
         print("\nThe path request is : ", path)
-        
+        htmlResp = "<!DOCTYPE html>\n<head><meta charset='UTF-8'></head>\n<html>\n<body>\n"
         
         # If the HTTP method is not GET, then we return a 405 error
         if header[0] != 'GET':
-            header[2] = header[2] + " 405 Method Not Allowed\r\n\r\n"
-            self.request.sendall(header[2].encode())
+            htmlResp += "405:Method Not Allowed\n</body>\n</html>"
+            response = header[2] + " 405 Method Not Allowed\r\nConnection: Closed\r\n\r\n" + htmlResp
+            self.request.sendall(bytearray(response, 'utf-8'))
+            return
         
         if path[-1] == "/":
             path += "index.html"
@@ -68,13 +70,14 @@ class MyWebServer(socketserver.BaseRequestHandler):
         
         # If the path does not exist then send a 404 error
         if not os.path.exists(directory):
-            header[2] = header[2] + " 404 Page Not Found\r\n\r\n"
-            self.request.sendall(header[2].encode())
+            htmlResp += "404:Page Not Found\n</body>\n</html>" 
+            response = header[2] + " 404 Not Found\r\nContent-Length: " + str(len(htmlResp)) + \
+            "\r\nContent-Type: text/html\r\nConnection: Closed\r\n\r\n" + htmlResp
+            self.request.sendall(response.encode())
+            return
         
         # If the path is found, lets open the content of our html or css file
-        else:
-            
-
+        if os.path.isfile(directory):
             f = open(directory, 'r')
             content = f.read()
             
@@ -83,20 +86,32 @@ class MyWebServer(socketserver.BaseRequestHandler):
                 contentType = "text/html"
             elif directory.endswith("css"):
                 contentType = "text/css"
-            
+            else:
+                htmlResp += "404:Page Not Found\n</body>\n</html>" 
+                response = header[2] + " 404 Not Found\r\nContent-Length: " + str(len(htmlResp)) + \
+                "\r\nContent-Type: text/html\r\nConnection: Closed\r\n\r\n" + htmlResp
+                self.request.sendall(response.encode())
+                return
+                
             # Modifying the header to send a success response, including the
             # content type, length & content
-            header[2] = header[2] + " 200 OK\r\nContent-Type: " + contentType + \
-            "\r\nContent-Length: " + str(len(content)) + "\r\n\Connection Closed\r\n\r\n" + content
             
+            response = header[2] + " 200 OK\r\nContent-Type: " + contentType + \
+            "\r\nContent-Length: " + str(len(content)) + "\r\n\Connection Closed\r\n\r\n" + content
+            self.request.sendall(bytearray(response, 'utf-8'))
+                
             f.close()
+                
+            if os.path.isdir(directory):
+                if directory[-1] != "/":
+                    code = 301
+                    response = header[2] + " 301 Moved Permanently\r\nContent-Type: text/html\r\nLocation: " + "http://127.0.0.1:8080{directory}/\r\n\r\n"
+                    self.request.sendall(bytearray(response, 'utf-8'))
+        
             # Sending the request for the header, allowing user to receive the html file while
             # connected to the server, encoding with utf-8
-            self.request.sendall(bytearray(header[2], 'utf-8'))
-            
-                    
-        print ("\nGot a request of: %s\n" % self.data)
-        self.request.sendall(bytearray("OK",'utf-8'))
+        
+        self.request.sendall(bytearray(response + " 301 Moved Permanently",'utf-8'))
     
     
   
